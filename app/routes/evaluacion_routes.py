@@ -86,7 +86,7 @@ def obtener_evaluaciones(
     db: Session = Depends(get_db),
     usuario_actual: Usuario = Depends(obtener_usuario_actual)
 ):
-    return listar_evaluaciones(db)
+    return listar_evaluaciones(db, usuario_actual)
 
 @router.get("/paciente/{paciente_id}", response_model=List[EvaluacionResumenResponse])
 def obtener_evaluaciones_por_paciente(
@@ -94,7 +94,11 @@ def obtener_evaluaciones_por_paciente(
     db: Session = Depends(get_db),
     usuario_actual: Usuario = Depends(obtener_usuario_actual)
 ):
-    return listar_evaluaciones_por_paciente(db, paciente_id)
+    return listar_evaluaciones_por_paciente(
+        db,
+        paciente_id,
+        usuario_actual
+    )
 
 
 @router.get("/estado/en-progreso", response_model=List[EvaluacionResumenResponse])
@@ -124,4 +128,8 @@ def obtener_evaluacion(
     db: Session = Depends(get_db),
     usuario_actual: Usuario = Depends(obtener_usuario_actual)
 ):
-    return obtener_evaluacion_por_id(db, evaluacion_id)
+    return obtener_evaluacion_por_id(
+        db,
+        evaluacion_id,
+        usuario_actual
+    )

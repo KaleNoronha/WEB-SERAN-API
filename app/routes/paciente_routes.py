@@ -1,4 +1,6 @@
+
 from typing import List
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
@@ -27,7 +29,7 @@ def registrar_paciente(
     db: Session = Depends(get_db),
     usuario_actual: Usuario = Depends(obtener_usuario_actual)
 ):
-    return crear_paciente(db, paciente_data)
+    return crear_paciente(db, paciente_data, usuario_actual)
 
 
 @router.get("/", response_model=List[PacienteResponse])
@@ -35,7 +37,7 @@ def obtener_pacientes(
     db: Session = Depends(get_db),
     usuario_actual: Usuario = Depends(obtener_usuario_actual)
 ):
-    return listar_pacientes(db)
+    return listar_pacientes(db, usuario_actual)
 
 
 @router.get("/{paciente_id}", response_model=PacienteResponse)
@@ -44,7 +46,11 @@ def obtener_paciente(
     db: Session = Depends(get_db),
     usuario_actual: Usuario = Depends(obtener_usuario_actual)
 ):
-    return obtener_paciente_por_id(db, paciente_id)
+    return obtener_paciente_por_id(
+        db,
+        paciente_id,
+        usuario_actual
+    )
 
 
 @router.put("/{paciente_id}", response_model=PacienteResponse)
@@ -54,4 +60,9 @@ def editar_paciente(
     db: Session = Depends(get_db),
     usuario_actual: Usuario = Depends(obtener_usuario_actual)
 ):
-    return actualizar_paciente(db, paciente_id, paciente_data)
+    return actualizar_paciente(
+        db,
+        paciente_id,
+        paciente_data,
+        usuario_actual
+    )

@@ -1,30 +1,116 @@
+
 from datetime import date
+
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
 
 from app.models.paciente_model import Paciente
+from app.models.usuario_model import Usuario
 from app.models.pregunta_model import Pregunta
 from app.models.evaluacion_model import Evaluacion, EvaluacionPregunta
-from app.schemas.evaluacion_schema import EvaluacionCreate, EvaluacionFinalizarCreate
+
+from app.schemas.evaluacion_schema import (
+    EvaluacionCreate,
+    EvaluacionFinalizarCreate
+)
+
 from app.services.rule_engine_service import evaluar_motor_reglas
-from app.models.recomendacion_model import Recomendacion, RecomendacionEvaluacion
+
+from app.models.recomendacion_model import (
+    Recomendacion,
+    RecomendacionEvaluacion
+)
+
 from app.models.config_recomendacion_model import ConfigRecomendacionUsuario
 
+
+# ==========================================================
+# VALIDACIÓN DE ACCESO A PACIENTES
+# ==========================================================
+
+def verificar_acceso_paciente(
+    db: Session,
+    paciente_id: int,
+    usuario_actual: Usuario
+):
+    if usuario_actual is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Usuario no autenticado"
+        )
+
+    if usuario_actual.rol_id not in (1, 2):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tienes permiso para acceder a pacientes"
+        )
+
+    consulta = db.query(Paciente).filter(
+        Paciente.id == paciente_id
+    )
+
+    # El doctor únicamente puede acceder a sus pacientes.
+    # El administrador puede acceder a todos.
+    if usuario_actual.rol_id == 2:
+        consulta = consulta.filter(
+            Paciente.usuario_id == usuario_actual.id
+        )
+
+    paciente = consulta.first()
+
+    if paciente is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Paciente no encontrado"
+        )
+
+    return paciente
+
+
+def verificar_acceso_evaluacion(
+    db: Session,
+    evaluacion: Evaluacion,
+    usuario_actual: Usuario
+):
+    verificar_acceso_paciente(
+        db,
+        evaluacion.paciente_id,
+        usuario_actual
+    )
+
+
+def obtener_doctor_por_id(db: Session, usuario_id: int):
+    usuario = db.query(Usuario).filter(
+        Usuario.id == usuario_id,
+        Usuario.rol_id == 2,
+        Usuario.estado == True
+    ).first()
+
+    if usuario is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Doctor no autorizado"
+        )
+
+    return usuario
+
+
+# ==========================================================
+# INICIAR EVALUACIÓN
+# ==========================================================
 
 def iniciar_evaluacion(
     db: Session,
     paciente_id: int,
     usuario_id: int
 ):
-    paciente = db.query(Paciente).filter(
-        Paciente.id == paciente_id
-    ).first()
+    usuario_actual = obtener_doctor_por_id(db, usuario_id)
 
-    if not paciente:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Paciente no encontrado"
-        )
+    verificar_acceso_paciente(
+        db,
+        paciente_id,
+        usuario_actual
+    )
 
     nueva_evaluacion = Evaluacion(
         usuario_id=usuario_id,
@@ -41,20 +127,23 @@ def iniciar_evaluacion(
 
     return nueva_evaluacion
 
+
+# ==========================================================
+# CREAR EVALUACIÓN COMPLETA
+# ==========================================================
+
 def crear_evaluacion(
     db: Session,
     evaluacion_data: EvaluacionCreate,
     usuario_id: int
 ):
-    paciente = db.query(Paciente).filter(
-        Paciente.id == evaluacion_data.paciente_id
-    ).first()
+    usuario_actual = obtener_doctor_por_id(db, usuario_id)
 
-    if not paciente:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Paciente no encontrado"
-        )
+    verificar_acceso_paciente(
+        db,
+        evaluacion_data.paciente_id,
+        usuario_actual
+    )
 
     if not evaluacion_data.respuestas:
         raise HTTPException(
@@ -72,7 +161,10 @@ def crear_evaluacion(
         if not pregunta:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Pregunta con ID {respuesta_item.pregunta_id} no encontrada"
+                detail=(
+                    f"Pregunta con ID "
+                    f"{respuesta_item.pregunta_id} no encontrada"
+                )
             )
 
         respuestas_con_preguntas.append({
@@ -107,26 +199,33 @@ def crear_evaluacion(
 
     db.commit()
 
-    tipo_recomendacion = f"Riesgo {resultado['nivel_riesgo'].lower()}"
+    tipo_recomendacion = (
+        f"Riesgo {resultado['nivel_riesgo'].lower()}"
+    )
 
-    categorias_config = db.query(ConfigRecomendacionUsuario).filter(
+    categorias_config = db.query(
+        ConfigRecomendacionUsuario
+    ).filter(
         ConfigRecomendacionUsuario.usuario_id == nueva_evaluacion.usuario_id,
         ConfigRecomendacionUsuario.activo == True
     ).all()
 
-    categorias_activas = [c.categoria for c in categorias_config]
+    categorias_activas = [
+        configuracion.categoria
+        for configuracion in categorias_config
+    ]
+
+    consulta_recomendaciones = db.query(Recomendacion).filter(
+        Recomendacion.estado == True,
+        Recomendacion.tipo_recomendacion == tipo_recomendacion
+    )
 
     if categorias_activas:
-        recomendaciones = db.query(Recomendacion).filter(
-            Recomendacion.estado == True,
-            Recomendacion.tipo_recomendacion == tipo_recomendacion,
+        consulta_recomendaciones = consulta_recomendaciones.filter(
             Recomendacion.categoria.in_(categorias_activas)
-        ).all()
-    else:
-        recomendaciones = db.query(Recomendacion).filter(
-            Recomendacion.estado == True,
-            Recomendacion.tipo_recomendacion == tipo_recomendacion
-        ).all()
+        )
+
+    recomendaciones = consulta_recomendaciones.all()
 
     recomendaciones_response = []
 
@@ -162,11 +261,44 @@ def crear_evaluacion(
     }
 
 
-def listar_evaluaciones(db: Session):
-    return db.query(Evaluacion).order_by(Evaluacion.id.desc()).all()
+# ==========================================================
+# LISTAR EVALUACIONES
+# ==========================================================
+
+def listar_evaluaciones(
+    db: Session,
+    usuario_actual: Usuario
+):
+    if usuario_actual.rol_id not in (1, 2):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tienes permiso para consultar evaluaciones"
+        )
+
+    consulta = db.query(Evaluacion)
+
+    if usuario_actual.rol_id == 2:
+        consulta = consulta.join(
+            Paciente,
+            Evaluacion.paciente_id == Paciente.id
+        ).filter(
+            Paciente.usuario_id == usuario_actual.id
+        )
+
+    return consulta.order_by(
+        Evaluacion.id.desc()
+    ).all()
 
 
-def obtener_evaluacion_por_id(db: Session, evaluacion_id: int):
+# ==========================================================
+# OBTENER EVALUACIÓN POR ID
+# ==========================================================
+
+def obtener_evaluacion_por_id(
+    db: Session,
+    evaluacion_id: int,
+    usuario_actual: Usuario
+):
     evaluacion = db.query(Evaluacion).filter(
         Evaluacion.id == evaluacion_id
     ).first()
@@ -176,6 +308,12 @@ def obtener_evaluacion_por_id(db: Session, evaluacion_id: int):
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Evaluación no encontrada"
         )
+
+    verificar_acceso_evaluacion(
+        db,
+        evaluacion,
+        usuario_actual
+    )
 
     respuestas_bd = db.query(EvaluacionPregunta).filter(
         EvaluacionPregunta.evaluacion_id == evaluacion_id
@@ -192,7 +330,9 @@ def obtener_evaluacion_por_id(db: Session, evaluacion_id: int):
         respuestas_evaluadas.append({
             "pregunta_id": respuesta.pregunta_id,
             "codigo": pregunta.codigo if pregunta else "",
-            "texto_pregunta": pregunta.texto_pregunta if pregunta else "",
+            "texto_pregunta": (
+                pregunta.texto_pregunta if pregunta else ""
+            ),
             "respuesta": respuesta.respuesta,
             "puntaje_obtenido": respuesta.puntaje_obtenido
         })
@@ -203,7 +343,9 @@ def obtener_evaluacion_por_id(db: Session, evaluacion_id: int):
                 "respuesta": respuesta.respuesta
             })
 
-    resultado_recalculado = evaluar_motor_reglas(respuestas_con_preguntas)
+    resultado_recalculado = evaluar_motor_reglas(
+        respuestas_con_preguntas
+    )
 
     recomendaciones_bd = db.query(Recomendacion).join(
         RecomendacionEvaluacion,
@@ -236,12 +378,19 @@ def obtener_evaluacion_por_id(db: Session, evaluacion_id: int):
         "recomendaciones": recomendaciones_response
     }
 
+
+# ==========================================================
+# FINALIZAR EVALUACIÓN EN PROGRESO
+# ==========================================================
+
 def finalizar_evaluacion(
     db: Session,
     evaluacion_id: int,
     evaluacion_data: EvaluacionFinalizarCreate,
     usuario_id: int
 ):
+    usuario_actual = obtener_doctor_por_id(db, usuario_id)
+
     evaluacion = db.query(Evaluacion).filter(
         Evaluacion.id == evaluacion_id
     ).first()
@@ -257,6 +406,12 @@ def finalizar_evaluacion(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="No tiene permiso para finalizar esta evaluación"
         )
+
+    verificar_acceso_evaluacion(
+        db,
+        evaluacion,
+        usuario_actual
+    )
 
     if evaluacion.estado_evaluacion != "En progreso":
         raise HTTPException(
@@ -290,7 +445,10 @@ def finalizar_evaluacion(
         if not pregunta:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Pregunta con ID {respuesta_item.pregunta_id} no encontrada"
+                detail=(
+                    f"Pregunta con ID "
+                    f"{respuesta_item.pregunta_id} no encontrada"
+                )
             )
 
         respuestas_con_preguntas.append({
@@ -317,26 +475,33 @@ def finalizar_evaluacion(
     db.commit()
     db.refresh(evaluacion)
 
-    tipo_recomendacion = f"Riesgo {resultado['nivel_riesgo'].lower()}"
+    tipo_recomendacion = (
+        f"Riesgo {resultado['nivel_riesgo'].lower()}"
+    )
 
-    categorias_config = db.query(ConfigRecomendacionUsuario).filter(
+    categorias_config = db.query(
+        ConfigRecomendacionUsuario
+    ).filter(
         ConfigRecomendacionUsuario.usuario_id == evaluacion.usuario_id,
         ConfigRecomendacionUsuario.activo == True
     ).all()
 
-    categorias_activas = [c.categoria for c in categorias_config]
+    categorias_activas = [
+        configuracion.categoria
+        for configuracion in categorias_config
+    ]
+
+    consulta_recomendaciones = db.query(Recomendacion).filter(
+        Recomendacion.estado == True,
+        Recomendacion.tipo_recomendacion == tipo_recomendacion
+    )
 
     if categorias_activas:
-        recomendaciones = db.query(Recomendacion).filter(
-            Recomendacion.estado == True,
-            Recomendacion.tipo_recomendacion == tipo_recomendacion,
+        consulta_recomendaciones = consulta_recomendaciones.filter(
             Recomendacion.categoria.in_(categorias_activas)
-        ).all()
-    else:
-        recomendaciones = db.query(Recomendacion).filter(
-            Recomendacion.estado == True,
-            Recomendacion.tipo_recomendacion == tipo_recomendacion
-        ).all()
+        )
+
+    recomendaciones = consulta_recomendaciones.all()
 
     recomendaciones_response = []
 
@@ -371,40 +536,80 @@ def finalizar_evaluacion(
         "recomendaciones": recomendaciones_response
     }
 
-def listar_evaluaciones_por_paciente(db: Session, paciente_id: int):
-    paciente = db.query(Paciente).filter(
-        Paciente.id == paciente_id
-    ).first()
 
-    if not paciente:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Paciente no encontrado"
-        )
+# ==========================================================
+# EVALUACIONES POR PACIENTE
+# ==========================================================
+
+def listar_evaluaciones_por_paciente(
+    db: Session,
+    paciente_id: int,
+    usuario_actual: Usuario
+):
+    verificar_acceso_paciente(
+        db,
+        paciente_id,
+        usuario_actual
+    )
 
     return db.query(Evaluacion).filter(
         Evaluacion.paciente_id == paciente_id
-    ).order_by(Evaluacion.id.desc()).all()
+    ).order_by(
+        Evaluacion.id.desc()
+    ).all()
 
 
-def listar_evaluaciones_en_progreso_por_usuario(db: Session, usuario_id: int):
-    return db.query(Evaluacion).filter(
+# ==========================================================
+# EVALUACIONES EN PROGRESO POR USUARIO
+# ==========================================================
+
+def listar_evaluaciones_en_progreso_por_usuario(
+    db: Session,
+    usuario_id: int
+):
+    return db.query(Evaluacion).join(
+        Paciente,
+        Evaluacion.paciente_id == Paciente.id
+    ).filter(
         Evaluacion.usuario_id == usuario_id,
+        Paciente.usuario_id == usuario_id,
         Evaluacion.estado_evaluacion == "En progreso"
-    ).order_by(Evaluacion.id.desc()).all()
+    ).order_by(
+        Evaluacion.id.desc()
+    ).all()
 
 
-def listar_evaluaciones_culminadas_por_usuario(db: Session, usuario_id: int):
-    return db.query(Evaluacion).filter(
+# ==========================================================
+# EVALUACIONES CULMINADAS POR USUARIO
+# ==========================================================
+
+def listar_evaluaciones_culminadas_por_usuario(
+    db: Session,
+    usuario_id: int
+):
+    return db.query(Evaluacion).join(
+        Paciente,
+        Evaluacion.paciente_id == Paciente.id
+    ).filter(
         Evaluacion.usuario_id == usuario_id,
+        Paciente.usuario_id == usuario_id,
         Evaluacion.estado_evaluacion == "Culminada"
-    ).order_by(Evaluacion.id.desc()).all()
+    ).order_by(
+        Evaluacion.id.desc()
+    ).all()
+
+
+# ==========================================================
+# CANCELAR EVALUACIÓN EN PROGRESO
+# ==========================================================
 
 def cancelar_evaluacion(
     db: Session,
     evaluacion_id: int,
     usuario_id: int
 ):
+    usuario_actual = obtener_doctor_por_id(db, usuario_id)
+
     evaluacion = db.query(Evaluacion).filter(
         Evaluacion.id == evaluacion_id
     ).first()
@@ -420,6 +625,12 @@ def cancelar_evaluacion(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="No tiene permiso para cancelar esta evaluación"
         )
+
+    verificar_acceso_evaluacion(
+        db,
+        evaluacion,
+        usuario_actual
+    )
 
     if evaluacion.estado_evaluacion != "En progreso":
         raise HTTPException(

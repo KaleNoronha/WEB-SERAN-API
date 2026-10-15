@@ -1,16 +1,42 @@
+
 from datetime import date
-from sqlalchemy.orm import Session
+
 from fastapi import HTTPException, status
+from sqlalchemy.orm import Session
 
 from app.models.paciente_model import Paciente
-from app.schemas.paciente_schema import PacienteCreate, PacienteUpdate
+from app.models.usuario_model import Usuario
 from app.models.evaluacion_model import Evaluacion
+from app.schemas.paciente_schema import PacienteCreate, PacienteUpdate
 
 
-def _obtener_paciente_modelo(db: Session, paciente_id: int):
-    paciente = db.query(Paciente).filter(Paciente.id == paciente_id).first()
+def verificar_rol_permitido(usuario_actual: Usuario):
+    if usuario_actual.rol_id not in (1, 2):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tienes permisos para gestionar pacientes"
+        )
 
-    if not paciente:
+
+def _obtener_paciente_modelo(
+    db: Session,
+    paciente_id: int,
+    usuario_actual: Usuario
+):
+    verificar_rol_permitido(usuario_actual)
+
+    consulta = db.query(Paciente).filter(
+        Paciente.id == paciente_id
+    )
+
+    if usuario_actual.rol_id == 2:
+        consulta = consulta.filter(
+            Paciente.usuario_id == usuario_actual.id
+        )
+
+    paciente = consulta.first()
+
+    if paciente is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Paciente no encontrado"
@@ -44,12 +70,24 @@ def construir_paciente_response(db: Session, paciente: Paciente):
         "fecha_registro": paciente.fecha_registro,
         "departamento": paciente.departamento,
         "evaluaciones": total_evaluaciones,
-        "ultimo_riesgo": ultima_evaluacion.nivel_riesgo if ultima_evaluacion else None,
-        "ultimo_puntaje": ultima_evaluacion.puntaje_total if ultima_evaluacion else None,
+        "ultimo_riesgo": (
+            ultima_evaluacion.nivel_riesgo
+            if ultima_evaluacion else None
+        ),
+        "ultimo_puntaje": (
+            ultima_evaluacion.puntaje_total
+            if ultima_evaluacion else None
+        ),
     }
 
 
-def crear_paciente(db: Session, paciente_data: PacienteCreate):
+def crear_paciente(
+    db: Session,
+    paciente_data: PacienteCreate,
+    usuario_actual: Usuario
+):
+    verificar_rol_permitido(usuario_actual)
+
     if paciente_data.dni:
         paciente_existente = db.query(Paciente).filter(
             Paciente.dni == paciente_data.dni
@@ -70,7 +108,8 @@ def crear_paciente(db: Session, paciente_data: PacienteCreate):
         peso=paciente_data.peso,
         talla=paciente_data.talla,
         departamento=paciente_data.departamento,
-        fecha_registro=date.today()
+        fecha_registro=date.today(),
+        usuario_id=usuario_actual.id
     )
 
     db.add(nuevo_paciente)
@@ -80,8 +119,20 @@ def crear_paciente(db: Session, paciente_data: PacienteCreate):
     return construir_paciente_response(db, nuevo_paciente)
 
 
-def listar_pacientes(db: Session):
-    pacientes = db.query(Paciente).order_by(Paciente.id.desc()).all()
+def listar_pacientes(
+    db: Session,
+    usuario_actual: Usuario
+):
+    verificar_rol_permitido(usuario_actual)
+
+    consulta = db.query(Paciente)
+
+    if usuario_actual.rol_id == 2:
+        consulta = consulta.filter(
+            Paciente.usuario_id == usuario_actual.id
+        )
+
+    pacientes = consulta.order_by(Paciente.id.desc()).all()
 
     return [
         construir_paciente_response(db, paciente)
@@ -89,8 +140,16 @@ def listar_pacientes(db: Session):
     ]
 
 
-def obtener_paciente_por_id(db: Session, paciente_id: int):
-    paciente = _obtener_paciente_modelo(db, paciente_id)
+def obtener_paciente_por_id(
+    db: Session,
+    paciente_id: int,
+    usuario_actual: Usuario
+):
+    paciente = _obtener_paciente_modelo(
+        db,
+        paciente_id,
+        usuario_actual
+    )
 
     return construir_paciente_response(db, paciente)
 
@@ -98,11 +157,18 @@ def obtener_paciente_por_id(db: Session, paciente_id: int):
 def actualizar_paciente(
     db: Session,
     paciente_id: int,
-    paciente_data: PacienteUpdate
+    paciente_data: PacienteUpdate,
+    usuario_actual: Usuario
 ):
-    paciente = _obtener_paciente_modelo(db, paciente_id)
+    paciente = _obtener_paciente_modelo(
+        db,
+        paciente_id,
+        usuario_actual
+    )
 
-    datos_actualizados = paciente_data.model_dump(exclude_unset=True)
+    datos_actualizados = paciente_data.model_dump(
+        exclude_unset=True
+    )
 
     if "dni" in datos_actualizados and datos_actualizados["dni"]:
         paciente_existente = db.query(Paciente).filter(

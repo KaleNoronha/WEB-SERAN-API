@@ -1,5 +1,7 @@
+
 from sqlalchemy import Column, Integer, String, Boolean, Date, ForeignKey
 from sqlalchemy.orm import relationship
+
 from app.database.database import Base
 
 
@@ -24,10 +26,11 @@ class Usuario(Base):
     contrasena = Column(String(255), nullable=False)
     telefono = Column(String(20), nullable=True)
     colegiatura = Column(String(30), nullable=True)
-    
+
     fecha_registro = Column(Date, nullable=True)
     fecha_actualizacion = Column(Date, nullable=True)
 
     estado = Column(Boolean, default=True)
 
     rol = relationship("Rol", back_populates="usuarios")
+    pacientes = relationship("Paciente", back_populates="usuario")

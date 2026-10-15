@@ -1,4 +1,7 @@
-from sqlalchemy import Column, Integer, String, Date, DECIMAL
+
+from sqlalchemy import Column, Integer, String, Date, DECIMAL, ForeignKey
+from sqlalchemy.orm import relationship
+
 from app.database.database import Base
 
 
@@ -18,5 +21,13 @@ class Paciente(Base):
     talla = Column(DECIMAL(4, 2), nullable=True)
 
     fecha_registro = Column(Date, nullable=True)
-
     departamento = Column(String(100), nullable=True)
+
+    usuario_id = Column(
+        Integer,
+        ForeignKey("usuario.id"),
+        nullable=True,
+        index=True
+    )
+
+    usuario = relationship("Usuario", back_populates="pacientes")
