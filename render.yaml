@@ -1,0 +1,28 @@
+# Exported from Render on 2026-10-15T16:36:00Z
+version: "1"
+services:
+- type: web
+  name: WEB-SERAN-API
+  runtime: python
+  repo: https://github.com/KaleNoronha/WEB-SERAN-API
+  branch: prod
+  plan: free
+  envVars:
+  - key: FRONTEND_URL
+    sync: false
+  - key: EMAIL_FROM
+    sync: false
+  - key: BREVO_API_KEY
+    sync: false
+  - key: ACCESS_TOKEN_EXPIRE_MINUTES
+    sync: false
+  - key: ALGORITHM
+    sync: false
+  - key: SECRET_KEY
+    sync: false
+  - key: DATABASE_URL
+    sync: false
+  region: oregon
+  buildCommand: pip install -r requirements.txt
+  startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+  autoDeployTrigger: commit
