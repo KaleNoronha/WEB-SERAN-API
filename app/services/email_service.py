@@ -68,3 +68,78 @@ def _parsear_remitente(email_from: str):
         return nombre or correo, correo
 
     return email_from.strip(), email_from.strip()
+
+
+from html import escape
+
+
+def enviar_correo_recuperacion_password(
+    email_destino: str,
+    token: str
+):
+    enlace = (
+        f"{settings.FRONTEND_URL.rstrip('/')}"
+        f"/restablecer-password/{token}"
+    )
+
+    asunto = "Restablecimiento de contraseña - SERAN"
+
+    enlace_seguro = escape(enlace, quote=True)
+
+    html = f"""
+    <div style="font-family:Arial,sans-serif;line-height:1.6;">
+        <h2>Recuperación de contraseña - SERAN</h2>
+
+        <p>Recibimos una solicitud para restablecer
+        la contraseña de tu cuenta.</p>
+
+        <p>Haz clic en el siguiente botón:</p>
+
+        <p>
+            <a href="{enlace_seguro}"
+               style="background:#1e293b;color:#fff;
+                      padding:12px 20px;text-decoration:none;
+                      border-radius:6px;display:inline-block;">
+                Restablecer contraseña
+            </a>
+        </p>
+
+        <p>Este enlace estará disponible durante
+        <strong>15 minutos</strong> y solo podrá
+        utilizarse una vez.</p>
+
+        <p>Si no solicitaste este cambio,
+        puedes ignorar este correo.</p>
+    </div>
+    """
+
+    nombre_remitente, correo_remitente = _parsear_remitente(
+        settings.EMAIL_FROM
+    )
+
+    payload = {
+        "sender": {
+            "name": nombre_remitente,
+            "email": correo_remitente
+        },
+        "to": [{"email": email_destino}],
+        "subject": asunto,
+        "htmlContent": html
+    }
+
+    headers = {
+        "accept": "application/json",
+        "api-key": settings.BREVO_API_KEY,
+        "content-type": "application/json"
+    }
+
+    respuesta = requests.post(
+        BREVO_API_URL,
+        json=payload,
+        headers=headers,
+        timeout=15
+    )
+
+    respuesta.raise_for_status()
+
+    return respuesta.json()

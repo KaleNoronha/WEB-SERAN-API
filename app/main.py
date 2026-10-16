@@ -4,7 +4,15 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 
 from app.database.database import get_db, engine, Base
-from app.models import usuario_model, paciente_model, pregunta_model, evaluacion_model, recomendacion_model, invitacion_model
+from app.models import (
+    usuario_model,
+    paciente_model,
+    pregunta_model,
+    evaluacion_model,
+    recomendacion_model,
+    invitacion_model,
+    recuperacion_password_model
+)
 from app.routes import auth_routes, paciente_routes, pregunta_routes, evaluacion_routes, recomendacion_routes, invitacion_routes, usuario_routes
 from app.routes import config_recomendacion_routes
 

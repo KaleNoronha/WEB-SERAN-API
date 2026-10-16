@@ -3,11 +3,13 @@ from sqlalchemy.orm import Session
 
 from app.database.database import get_db
 from app.schemas.usuario_schema import UsuarioCreate, UsuarioResponse
-from app.schemas.auth_schema import LoginRequest, RegistroDoctorInvitadoRequest, UsuarioPerfilUpdate
+from app.schemas.auth_schema import LoginRequest, RegistroDoctorInvitadoRequest, UsuarioPerfilUpdate, SolicitudRecuperacionPassword, RestablecerPasswordRequest
 from app.services.auth_service import (
     registrar_usuario,
     autenticar_usuario,
-    registrar_doctor_por_invitacion
+    registrar_doctor_por_invitacion,
+    solicitar_recuperacion_password,
+    restablecer_password
 )
 from app.dependencies.auth_dependency import obtener_usuario_actual, requerir_administrador
 from app.models.usuario_model import Usuario
@@ -67,3 +69,19 @@ def registro_doctor_invitado(
         token=token,
         doctor_data=doctor_data
     )
+
+
+@router.post("/solicitar-recuperacion")
+def solicitar_recuperacion(
+    datos: SolicitarRecuperacionPassword,
+    db: Session = Depends(get_db)
+):
+    return solicitar_recuperacion_password(db, datos)
+
+
+@router.post("/restablecer-password")
+def restablecer_contrasena(
+    datos: RestablecerPasswordRequest,
+    db: Session = Depends(get_db)
+):
+    return restablecer_password(db, datos)

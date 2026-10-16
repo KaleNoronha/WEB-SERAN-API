@@ -24,3 +24,13 @@ class UsuarioPerfilUpdate(BaseModel):
     apellidos: Optional[str] = None
     telefono: Optional[str] = None
     colegiatura: Optional[str] = None
+
+    
+class SolicitarRecuperacionPassword(BaseModel):
+    correo: EmailStr
+
+
+class RestablecerPasswordRequest(BaseModel):
+    token: str = Field(min_length=1)
+    nueva_contrasena: str = Field(min_length=6, max_length=72)
+    confirmar_contrasena: str = Field(min_length=6, max_length=72)
