@@ -26,7 +26,11 @@ class Usuario(Base):
     contrasena = Column(String(255), nullable=False)
     telefono = Column(String(20), nullable=True)
     colegiatura = Column(String(30), nullable=True)
-
+    hospital = Column(
+    String(150),
+    nullable=True,
+    default="Hospital Nacional Edgardo Rebagliati Martins"
+    )
     fecha_registro = Column(Date, nullable=True)
     fecha_actualizacion = Column(Date, nullable=True)
 

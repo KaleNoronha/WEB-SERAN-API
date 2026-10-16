@@ -9,6 +9,7 @@ class UsuarioBase(BaseModel):
     correo: EmailStr
     telefono: Optional[str] = None
     colegiatura: Optional[str] = None
+    hospital: Optional[str] = None
     rol_id: int
 
 

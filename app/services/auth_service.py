@@ -45,6 +45,7 @@ def registrar_usuario(db: Session, usuario_data: UsuarioCreate):
     contrasena=generar_hash_contrasena(usuario_data.contrasena),
     telefono=usuario_data.telefono,
     colegiatura=usuario_data.colegiatura,
+    hospital="Hospital Nacional Edgardo Rebagliati Martins",
     fecha_registro=date.today(),
     fecha_actualizacion=date.today(),
     estado=True
@@ -145,6 +146,7 @@ def registrar_doctor_por_invitacion(
         contrasena=generar_hash_contrasena(doctor_data.contrasena),
         telefono=doctor_data.telefono,
         colegiatura=doctor_data.colegiatura,
+        hospital="Hospital Nacional Edgardo Rebagliati Martins",
         fecha_registro=date.today(),
         fecha_actualizacion=date.today(),
         estado=True
