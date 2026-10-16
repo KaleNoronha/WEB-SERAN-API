@@ -3,7 +3,13 @@ from sqlalchemy.orm import Session
 
 from app.database.database import get_db
 from app.schemas.usuario_schema import UsuarioCreate, UsuarioResponse
-from app.schemas.auth_schema import LoginRequest, RegistroDoctorInvitadoRequest, UsuarioPerfilUpdate, SolicitudRecuperacionPassword, RestablecerPasswordRequest
+from app.schemas.auth_schema import (
+    LoginRequest,
+    RegistroDoctorInvitadoRequest,
+    UsuarioPerfilUpdate,
+    SolicitarRecuperacionPassword,
+    RestablecerPasswordRequest
+)
 from app.services.auth_service import (
     registrar_usuario,
     autenticar_usuario,

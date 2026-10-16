@@ -159,3 +159,163 @@ def registrar_doctor_por_invitacion(
     db.refresh(nuevo_doctor)
 
     return nuevo_doctor
+
+
+def _ahora_utc():
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def _hash_token(token: str):
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def solicitar_recuperacion_password(
+    db: Session,
+    datos: SolicitarRecuperacionPassword
+):
+    correo = str(datos.correo).strip().lower()
+
+    usuario = db.query(Usuario).filter(
+        Usuario.correo.ilike(correo)
+    ).first()
+
+    # Criterio solicitado en la HU 03.
+    if usuario is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="El correo ingresado no está registrado"
+        )
+
+    if not usuario.estado:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="La cuenta se encuentra deshabilitada"
+        )
+
+    token = secrets.token_urlsafe(32)
+    ahora = _ahora_utc()
+
+    registro = RecuperacionPassword(
+        usuario_id=usuario.id,
+        token_hash=_hash_token(token),
+        fecha_creacion=ahora,
+        fecha_expiracion=ahora + timedelta(minutes=15),
+        fecha_uso=None
+    )
+
+    try:
+        db.add(registro)
+        db.flush()
+
+        enviar_correo_recuperacion_password(
+            email_destino=usuario.correo,
+            token=token
+        )
+
+        db.commit()
+
+    except Exception:
+        db.rollback()
+
+        # No revelar detalles del proveedor de correo al cliente.
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "No fue posible enviar el correo de recuperación. "
+                "Inténtalo nuevamente."
+            )
+        )
+
+    return {
+        "mensaje": (
+            "Enlace de recuperación enviado exitosamente. "
+            "Revisa tu correo electrónico."
+        )
+    }
+
+
+def restablecer_password(
+    db: Session,
+    datos: RestablecerPasswordRequest
+):
+    if datos.nueva_contrasena != datos.confirmar_contrasena:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Las contraseñas no coinciden"
+        )
+
+    if len(datos.nueva_contrasena.encode("utf-8")) > 72:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La contraseña es demasiado larga"
+        )
+
+    ahora = _ahora_utc()
+
+    # Bloqueo de fila para impedir el uso simultáneo del token.
+    registro = db.query(RecuperacionPassword).filter(
+        RecuperacionPassword.token_hash == _hash_token(datos.token)
+    ).with_for_update().first()
+
+    if registro is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El enlace de recuperación no es válido"
+        )
+
+    if registro.fecha_uso is not None:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Este enlace ya fue utilizado"
+        )
+
+    if registro.fecha_expiracion <= ahora:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El enlace de recuperación ha expirado"
+        )
+
+    usuario = db.query(Usuario).filter(
+        Usuario.id == registro.usuario_id,
+        Usuario.estado == True
+    ).first()
+
+    if usuario is None:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La cuenta no está disponible"
+        )
+
+    try:
+        usuario.contrasena = generar_hash_contrasena(
+            datos.nueva_contrasena
+        )
+        usuario.fecha_actualizacion = date.today()
+
+        # Invalidar todos los enlaces pendientes del usuario.
+        db.query(RecuperacionPassword).filter(
+            RecuperacionPassword.usuario_id == usuario.id,
+            RecuperacionPassword.fecha_uso.is_(None)
+        ).update(
+            {"fecha_uso": ahora},
+            synchronize_session=False
+        )
+
+        db.commit()
+
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="No fue posible actualizar la contraseña"
+        )
+
+    return {
+        "mensaje": (
+            "Contraseña actualizada correctamente. "
+            "Ya puedes iniciar sesión."
+        )
+    }
