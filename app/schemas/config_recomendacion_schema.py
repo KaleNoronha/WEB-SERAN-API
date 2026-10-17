@@ -1,3 +1,4 @@
+
 from pydantic import BaseModel
 
 
@@ -13,6 +14,7 @@ class ConfigRecomendacionUpdate(BaseModel):
 class ConfigRecomendacionResponse(BaseModel):
     categoria: str
     activo: bool
+    disponible: bool = True
 
     class Config:
         from_attributes = True

@@ -16,6 +16,11 @@ from app.services.recomendacion_service import (
     actualizar_recomendacion,
     desactivar_recomendacion
 )
+
+from app.services.config_recomendacion_service import (
+    obtener_categorias_efectivas
+)
+
 from app.dependencies.auth_dependency import obtener_usuario_actual, requerir_administrador
 from app.models.usuario_model import Usuario
 
@@ -37,7 +42,27 @@ def obtener_recomendaciones(
     db: Session = Depends(get_db),
     usuario_actual: Usuario = Depends(obtener_usuario_actual)
 ):
-    return listar_recomendaciones(db)
+    recomendaciones = listar_recomendaciones(db)
+
+    categorias_activas = set(
+        obtener_categorias_efectivas(db, usuario_actual.id)
+    )
+
+    return [
+        {
+            "id": rec.id,
+            "titulo": rec.titulo,
+            "descripcion": rec.descripcion,
+            "tipo_recomendacion": rec.tipo_recomendacion,
+            "categoria": rec.categoria,
+            "estado": rec.estado,
+            "estado_efectivo": (
+                bool(rec.estado)
+                and rec.categoria in categorias_activas
+            )
+        }
+        for rec in recomendaciones
+    ]
 
 
 @router.get("/activas", response_model=List[RecomendacionResponse])

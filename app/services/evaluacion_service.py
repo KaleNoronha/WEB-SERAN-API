@@ -23,6 +23,9 @@ from app.models.recomendacion_model import (
 
 from app.models.config_recomendacion_model import ConfigRecomendacionUsuario
 
+from app.services.config_recomendacion_service import (
+    obtener_categorias_efectivas
+)
 
 # ==========================================================
 # VALIDACIÓN DE ACCESO A PACIENTES
@@ -210,22 +213,16 @@ def crear_evaluacion(
         ConfigRecomendacionUsuario.activo == True
     ).all()
 
-    categorias_activas = [
-        configuracion.categoria
-        for configuracion in categorias_config
-    ]
-
-    consulta_recomendaciones = db.query(Recomendacion).filter(
-        Recomendacion.estado == True,
-        Recomendacion.tipo_recomendacion == tipo_recomendacion
+    categorias_activas = obtener_categorias_efectivas(
+        db,
+        nueva_evaluacion.usuario_id
     )
 
-    if categorias_activas:
-        consulta_recomendaciones = consulta_recomendaciones.filter(
-            Recomendacion.categoria.in_(categorias_activas)
-        )
-
-    recomendaciones = consulta_recomendaciones.all()
+    recomendaciones = db.query(Recomendacion).filter(
+        Recomendacion.estado == True,
+        Recomendacion.tipo_recomendacion == tipo_recomendacion,
+        Recomendacion.categoria.in_(categorias_activas)
+    ).all()
 
     recomendaciones_response = []
 
@@ -486,22 +483,17 @@ def finalizar_evaluacion(
         ConfigRecomendacionUsuario.activo == True
     ).all()
 
-    categorias_activas = [
-        configuracion.categoria
-        for configuracion in categorias_config
-    ]
-
-    consulta_recomendaciones = db.query(Recomendacion).filter(
-        Recomendacion.estado == True,
-        Recomendacion.tipo_recomendacion == tipo_recomendacion
+    categorias_activas = obtener_categorias_efectivas(
+        db,
+        evaluacion.usuario_id
     )
 
-    if categorias_activas:
-        consulta_recomendaciones = consulta_recomendaciones.filter(
-            Recomendacion.categoria.in_(categorias_activas)
-        )
+    recomendaciones = db.query(Recomendacion).filter(
+        Recomendacion.estado == True,
+        Recomendacion.tipo_recomendacion == tipo_recomendacion,
+        Recomendacion.categoria.in_(categorias_activas)
+    ).all()
 
-    recomendaciones = consulta_recomendaciones.all()
 
     recomendaciones_response = []
 
